@@ -62,10 +62,11 @@ class PredNet(chainer.Chain):
         self.sizes = [(1, 4, self.width, self.height)]
 
         super(PredNet, self).__init__(
-            conv_lstm_r0=ConvLSTM(20, 20, (4*2,), 16),
-            deconv_p0=L.Deconvolution2D(16, 4, 8, stride=4),
-            conv_q1=L.Convolution2D(16, 32, 4, stride=2),
-            linear_q2=L.Linear(2592, 256)
+            conv_lstm_r0=ConvLSTM(20, 20, (4*2,), 32),
+            deconv_p0=L.Deconvolution2D(32, 4, 8, stride=4),
+            conv_q1=L.Convolution2D(32, 64, 4, stride=2, bias=0.1),
+            conv_q2=L.Convolution2D(64, 64, 3, stride=1, bias=0.1),
+            linear_q3=L.Linear(3136, 256, bias=0.1),
         )
         self.reset_state()
 
@@ -81,7 +82,8 @@ class PredNet(chainer.Chain):
         R0 = self.conv_lstm_r0((E0, ))
         self.P0 = F.clipped_relu(self.deconv_p0(R0), 1.0)
         q = F.relu(self.conv_q1(R0))
-        q = F.relu(self.linear_q2(q))
+        q = F.relu(self.conv_q2(q))
+        q = F.relu(self.linear_q3(q))
 
         return q
 
