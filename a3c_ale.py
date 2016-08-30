@@ -144,6 +144,8 @@ def train_loop(process_idx, counter, max_score, args, agent, env, start_time):
             with counter.get_lock():
                 counter.value += 1
                 global_t = counter.value
+                if global_t % 10000 == 0:
+                    print('global_t:'+str(global_t))
             local_t += 1
 
             if global_t > args.steps:
