@@ -57,6 +57,7 @@ class A3C(object):
         self.past_action_log_prob = {}
         self.past_action_entropy = {}
         self.past_states = {}
+        self.past_pred_states = {}
         self.past_rewards = {}
         self.past_values = {}
 
@@ -82,11 +83,12 @@ class A3C(object):
             if is_state_terminal:
                 R = 0
             else:
-                _, vout = self.model.pi_and_v(statevar, keep_same_state=True)
+                _, vout, _ = self.model.pi_and_v(statevar, keep_same_state=True)
                 R = float(vout.data)
 
             pi_loss = 0
             v_loss = 0
+            s_loss = 0
             for i in reversed(range(self.t_start, self.t)):
                 R *= self.gamma
                 R += self.past_rewards[i]
@@ -107,6 +109,9 @@ class A3C(object):
 
                 v_loss += (v - R) ** 2 / 2
 
+                if i is not (self.t_start and self.t-1):
+                    s_loss += F.mean_squared_error(self.past_pred_states[i-1], self.past_states[i])
+
             if self.pi_loss_coef != 1.0:
                 pi_loss *= self.pi_loss_coef
 
@@ -123,7 +128,11 @@ class A3C(object):
             if self.process_idx == 0:
                 logger.debug('pi_loss:%s v_loss:%s', pi_loss.data, v_loss.data)
 
-            total_loss = pi_loss + F.reshape(v_loss, pi_loss.data.shape)
+            if s_loss is not 0:
+                total_loss = pi_loss + F.reshape(v_loss, pi_loss.data.shape) \
+                             + F.reshape(s_loss, pi_loss.data.shape)
+            else:
+                total_loss = pi_loss + F.reshape(v_loss, pi_loss.data.shape)
 
             # Compute gradients using thread-specific model
             self.model.zerograds()
@@ -153,10 +162,11 @@ class A3C(object):
 
         if not is_state_terminal:
             self.past_states[self.t] = statevar
-            pout, vout = self.model.pi_and_v(statevar)
+            pout, vout, sout = self.model.pi_and_v(statevar)
             self.past_action_log_prob[self.t] = pout.sampled_actions_log_probs
             self.past_action_entropy[self.t] = pout.entropy
             self.past_values[self.t] = vout
+            self.past_pred_states[self.t] = sout
             self.t += 1
             if self.process_idx == 0:
                 logger.debug('t:%s entropy:%s, probs:%s',

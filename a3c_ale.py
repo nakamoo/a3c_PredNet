@@ -86,12 +86,12 @@ class A3CPred(chainer.ChainList, a3c.A3CModel):
             pred_clh = self.head.conv_lstm_r0.h
             pred_clc = self.head.conv_lstm_r0.c
             pre_s = self.head.P0
-            out = self.head(state)
+            out, s = self.head(state)
             self.head.conv_lstm_r0.h = pred_clh
             self.head.conv_lstm_r0.c = pred_clc
             self.head.P0 = pre_s
         else:
-            out = self.head(state)
+            out, s = self.head(state)
 
         if keep_same_state:
             prev_h, prev_c = self.lstm.h, self.lstm.c
@@ -99,7 +99,7 @@ class A3CPred(chainer.ChainList, a3c.A3CModel):
             self.lstm.h, self.lstm.c = prev_h, prev_c
         else:
             out = self.lstm(out)
-        return self.pi(out), self.v(out)
+        return self.pi(out), self.v(out), s
 
     def reset_state(self):
         self.lstm.reset_state()
@@ -175,7 +175,7 @@ def train_loop(process_idx, counter, max_score, args, agent, env, start_time):
                 test_model.reset_state()
 
                 def p_func(s):
-                    pout, _ = test_model.pi_and_v(s)
+                    pout, _, _ = test_model.pi_and_v(s)
                     test_model.unchain_backward()
                     return pout
                 mean, median, stdev = eval_performance(

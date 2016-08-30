@@ -85,7 +85,7 @@ class PredNet(chainer.Chain):
         q = F.relu(self.conv_q2(q))
         q = F.relu(self.linear_q3(q))
 
-        return q
+        return q, self.P0
 
     def to_cpu(self):
         super(PredNet, self).to_cpu()
