@@ -70,6 +70,47 @@ class A3CLSTM(chainer.ChainList, a3c.A3CModel):
         self.lstm.c.unchain_backward()
 
 
+class A3CPred(chainer.ChainList, a3c.A3CModel):
+    def __init__(self, n_actions):
+        self.head = dqn_head.PredNet()
+        self.pi = policy.FCSoftmaxPolicy(
+            self.head.n_output_channels, n_actions)
+        self.v = v_function.FCVFunction(self.head.n_output_channels)
+        self.lstm = L.LSTM(self.head.n_output_channels,
+                           self.head.n_output_channels)
+        super().__init__(self.head, self.lstm, self.pi, self.v)
+        init_like_torch(self)
+
+    def pi_and_v(self, state, keep_same_state=False):
+        if keep_same_state:
+            pred_clh = self.head.conv_lstm_r0.h
+            pred_clc = self.head.conv_lstm_r0.c
+            pre_s = self.head.P0
+            out = self.head(state)
+            self.head.conv_lstm_r0.h = pred_clh
+            self.head.conv_lstm_r0.c = pred_clc
+            self.head.P0 = pre_s
+        else:
+            out = self.head(state)
+
+        if keep_same_state:
+            prev_h, prev_c = self.lstm.h, self.lstm.c
+            out = self.lstm(out)
+            self.lstm.h, self.lstm.c = prev_h, prev_c
+        else:
+            out = self.lstm(out)
+        return self.pi(out), self.v(out)
+
+    def reset_state(self):
+        self.lstm.reset_state()
+        self.head.reset_state()
+
+    def unchain_backward(self):
+        self.lstm.h.unchain_backward()
+        self.lstm.c.unchain_backward()
+        self.head.unchain_backward()
+
+
 def eval_performance(rom, p_func, n_runs):
     assert n_runs > 1, 'Computing stdev requires at least two runs'
     scores = []
@@ -202,9 +243,7 @@ def main():
     parser.add_argument('--eval-frequency', type=int, default=10 ** 6)
     parser.add_argument('--eval-n-runs', type=int, default=10)
     parser.add_argument('--weight-decay', type=float, default=0.0)
-    parser.add_argument('--use-lstm', action='store_true')
     parser.set_defaults(use_sdl=False)
-    parser.set_defaults(use_lstm=False)
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -217,10 +256,7 @@ def main():
     n_actions = ale.ALE(args.rom).number_of_actions
 
     def model_opt():
-        if args.use_lstm:
-            model = A3CLSTM(n_actions)
-        else:
-            model = A3CFF(n_actions)
+        model = A3CPred(n_actions)
         opt = rmsprop_async.RMSpropAsync(lr=7e-4, eps=1e-1, alpha=0.99)
         opt.setup(model)
         opt.add_hook(chainer.optimizer.GradientClipping(40))
